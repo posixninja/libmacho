@@ -1,0 +1,1 @@
+nobase_include_HEADERS = macho/macho.h macho/command.h macho/segment.h macho/section.h macho/symtab.h macho/symbol.h

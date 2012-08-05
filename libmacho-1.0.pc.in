@@ -1,0 +1,11 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: libmacho
+Description: A small C library capable of parsing and altering Mach-O binaries
+Requires: libchronic-1.0 >= 1.0
+Version: 1.0
+Libs: -L${libdir} -lmacho-1.0
+Cflags: -I${includedir}
