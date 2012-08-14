@@ -19,14 +19,13 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
-#include <chronic/file.h>
-#include <chronic/debug.h>
 #include <chronic/chronic.h>
+
 #include <macho/macho.h>
 #include <macho/symtab.h>
-#include <dyldcache/cache.h>
 
 /*
  * Mach-O Functions
@@ -39,7 +38,7 @@ macho_t* macho_create() {
 	return macho;
 }
 
-macho_t* macho_load(unsigned char* data, unsigned int size, dyldcache_t* cache) {
+macho_t* macho_load(unsigned char* data, unsigned int size) {
 	int i = 0;
 	int err = 0;
 	macho_t* macho = NULL;
@@ -90,8 +89,6 @@ macho_t* macho_load(unsigned char* data, unsigned int size, dyldcache_t* cache) 
 		macho->symtabs = macho_symtabs_create(symtab_count);
 		macho->symtab_count = 0;
 
-		macho->cache = cache;
-
 		if (unk_count > 0) {
 			error("WARNING: %d unhandled Mach-O Commands\n", unk_count);
 		}
@@ -122,7 +119,7 @@ macho_t* macho_open(const char* path) {
 		}
 
 		//debug("Creating Mach-O object from file\n");
-		macho = macho_load(data, size, NULL);
+		macho = macho_load(data, size);
 		if (macho == NULL) {
 			error("Unable to load Mach-O file\n");
 			return NULL;
@@ -281,7 +278,7 @@ int macho_handle_command(macho_t* macho, macho_command_t* command) {
 		case MACHO_CMD_SYMTAB:
 			// link-edit stab symbol table info
 		{
-			macho_symtab_t* symtab = macho_symtab_load(macho->data+command->offset, (macho->cache) ? macho->cache->data : macho->data);
+			macho_symtab_t* symtab = macho_symtab_load(macho->data+command->offset, macho->data);
 			if (symtab) {
 				macho->symtabs[macho->symtab_count++] = symtab;
 			} else {

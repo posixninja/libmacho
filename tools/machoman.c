@@ -21,7 +21,6 @@
 #include <stdlib.h>
 
 #include <macho/macho.h>
-#include <chronic/debug.h>
 #include <chronic/chronic.h>
 
 enum {

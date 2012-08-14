@@ -25,7 +25,6 @@
 #include <macho/segment.h>
 #include <macho/section.h>
 #include <macho/command.h>
-#include <dyldcache/cache.h>
 
 typedef struct macho_header_t {
 	uint32_t magic;
@@ -48,7 +47,6 @@ typedef struct macho_t {
 	macho_command_t** commands;
 	macho_segment_t** segments;
 	macho_symtab_t** symtabs;
-	dyldcache_t* cache;
 } macho_t;
 
 /*
@@ -56,7 +54,7 @@ typedef struct macho_t {
  */
 macho_t* macho_create();
 macho_t* macho_open(const char* path);
-macho_t* macho_load(unsigned char* data, unsigned int size, dyldcache_t* cache);
+macho_t* macho_load(unsigned char* data, unsigned int size);
 uint32_t macho_lookup(macho_t* macho, const char* sym);
 void macho_list_symbols(macho_t* macho, void (*print_func)(const char*, uint32_t, void*), void* userdata);
 void macho_debug(macho_t* macho);
