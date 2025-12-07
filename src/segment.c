@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include <chronic/debug.h>
 #include <chronic/chronic.h>
@@ -36,20 +37,29 @@ macho_segment_t* macho_segment_create() {
 	return segment;
 }
 
-macho_segment_t* macho_segment_load(unsigned char* data, unsigned int offset) {
+macho_segment_t* macho_segment_load(unsigned char* data, unsigned int offset, uint8_t is_64) {
 	unsigned char* address = NULL;
 	macho_segment_t* segment = macho_segment_create();
 	if (segment) {
-		segment->command = macho_segment_cmd_load(data, offset);
+		segment->command = macho_segment_cmd_load(data, offset, is_64);
 		if (!segment->command) {
 			macho_segment_free(segment);
 			return NULL;
 		}
-		segment->name = strdup(segment->command->segname);
+		segment->is_64 = is_64;
+		segment->name = malloc(sizeof(segment->command->segname) + 1);
+		if (segment->name) {
+			memcpy(segment->name, segment->command->segname, sizeof(segment->command->segname));
+			segment->name[sizeof(segment->command->segname)] = '\0';
+		}
 		segment->size = segment->command->filesize;
 		segment->offset = segment->command->fileoff;
 		segment->address = segment->command->vmaddr;
-		segment->data = NULL; // ????
+		if (segment->command->filesize > 0 && data) {
+			segment->data = data + segment->offset;
+		} else {
+			segment->data = NULL;
+		}
 		//segment->sections = malloc(segment->cmd->nsects * sizeof(macho_section_t*));
 	}
 	return segment;
@@ -58,9 +68,9 @@ macho_segment_t* macho_segment_load(unsigned char* data, unsigned int offset) {
 void macho_segment_debug(macho_segment_t* segment) {
 	debug("\tSegment:\n");
 	debug("\t\tname: %s\n", segment->name);
-	debug("\t\tsize: 0x%x\n", segment->size);
-	debug("\t\toffset: 0x%x\n", segment->offset);
-	debug("\t\taddress: 0x%08x\n", segment->address);
+	debug("\t\tsize: 0x%016" PRIx64 "\n", segment->size);
+	debug("\t\toffset: 0x%016" PRIx64 "\n", segment->offset);
+	debug("\t\taddress: 0x%016" PRIx64 "\n", segment->address);
 }
 
 void macho_segment_free(macho_segment_t* segment) {
@@ -86,12 +96,74 @@ macho_segment_cmd_t* macho_segment_cmd_create() {
 	return info;
 }
 
-macho_segment_cmd_t* macho_segment_cmd_load(unsigned char* data, unsigned int offset) {
+macho_segment_cmd_t* macho_segment_cmd_load(unsigned char* data, unsigned int offset, uint8_t is_64) {
+	typedef struct macho_segment_cmd32_disk_t {
+		uint32_t cmd;
+		uint32_t cmdsize;
+		char segname[16];
+		uint32_t vmaddr;
+		uint32_t vmsize;
+		uint32_t fileoff;
+		uint32_t filesize;
+		uint32_t maxprot;
+		uint32_t initprot;
+		uint32_t nsects;
+		uint32_t flags;
+	} macho_segment_cmd32_disk_t;
+
+	typedef struct macho_segment_cmd64_disk_t {
+		uint32_t cmd;
+		uint32_t cmdsize;
+		char segname[16];
+		uint64_t vmaddr;
+		uint64_t vmsize;
+		uint64_t fileoff;
+		uint64_t filesize;
+		uint32_t maxprot;
+		uint32_t initprot;
+		uint32_t nsects;
+		uint32_t flags;
+	} macho_segment_cmd64_disk_t;
+
 	macho_segment_cmd_t* cmd = macho_segment_cmd_create();
-	if (cmd) {
-		memcpy(cmd, data+offset, sizeof(macho_segment_cmd_t));
-		//macho_segment_cmd_debug(cmd);
+	if (cmd == NULL) {
+		return NULL;
 	}
+
+	if (is_64) {
+		macho_segment_cmd64_disk_t disk = { 0 };
+		memcpy(&disk, data+offset, sizeof(macho_segment_cmd64_disk_t));
+		cmd->cmd = disk.cmd;
+		cmd->cmdsize = disk.cmdsize;
+		memcpy(cmd->segname, disk.segname, sizeof(disk.segname));
+		cmd->segname[sizeof(cmd->segname) - 1] = '\0';
+		cmd->vmaddr = disk.vmaddr;
+		cmd->vmsize = disk.vmsize;
+		cmd->fileoff = disk.fileoff;
+		cmd->filesize = disk.filesize;
+		cmd->maxprot = disk.maxprot;
+		cmd->initprot = disk.initprot;
+		cmd->nsects = disk.nsects;
+		cmd->flags = disk.flags;
+		cmd->is_64 = 1;
+	} else {
+		macho_segment_cmd32_disk_t disk = { 0 };
+		memcpy(&disk, data+offset, sizeof(macho_segment_cmd32_disk_t));
+		cmd->cmd = disk.cmd;
+		cmd->cmdsize = disk.cmdsize;
+		memcpy(cmd->segname, disk.segname, sizeof(disk.segname));
+		cmd->segname[sizeof(cmd->segname) - 1] = '\0';
+		cmd->vmaddr = disk.vmaddr;
+		cmd->vmsize = disk.vmsize;
+		cmd->fileoff = disk.fileoff;
+		cmd->filesize = disk.filesize;
+		cmd->maxprot = disk.maxprot;
+		cmd->initprot = disk.initprot;
+		cmd->nsects = disk.nsects;
+		cmd->flags = disk.flags;
+		cmd->is_64 = 0;
+	}
+	//macho_segment_cmd_debug(cmd);
 	return cmd;
 }
 
@@ -100,10 +172,10 @@ void macho_segment_cmd_debug(macho_segment_cmd_t* cmd) {
 	debug("\t\t     cmd = 0x%x\n", cmd->cmd);
 	debug("\t\t cmdsize = 0x%x\n", cmd->cmdsize);
 	debug("\t\t segname = %s\n", cmd->segname);
-	debug("\t\t  vmaddr = 0x%08x\n", cmd->vmaddr);
-	debug("\t\t  vmsize = 0x%x\n", cmd->vmsize);
-	debug("\t\t fileoff = 0x%x\n", cmd->fileoff);
-	debug("\t\tfilesize = 0x%x\n", cmd->filesize);
+	debug("\t\t  vmaddr = 0x%016" PRIx64 "\n", cmd->vmaddr);
+	debug("\t\t  vmsize = 0x%016" PRIx64 "\n", cmd->vmsize);
+	debug("\t\t fileoff = 0x%016" PRIx64 "\n", cmd->fileoff);
+	debug("\t\tfilesize = 0x%016" PRIx64 "\n", cmd->filesize);
 	debug("\t\t maxprot = 0x%08x\n", cmd->maxprot);
 	debug("\t\tinitprot = 0x%08x\n", cmd->initprot);
 	debug("\t\t  nsects = 0x%x\n", cmd->nsects);

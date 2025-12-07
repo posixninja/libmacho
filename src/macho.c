@@ -128,10 +128,10 @@ macho_t* macho_open(const char* path) {
 	return macho;
 }
 
-uint32_t macho_lookup(macho_t* macho, const char* sym) {
+uint64_t macho_lookup(macho_t* macho, const char* sym) {
 	int i = 0;
 	int j = 0;
-	nlist* nl = NULL;
+	macho_nlist_t* nl = NULL;
 	macho_symtab_t* symtab = NULL;
 	for (i = 0; i < macho->symtab_count; i++) {
 		symtab = macho->symtabs[i];
@@ -147,10 +147,10 @@ uint32_t macho_lookup(macho_t* macho, const char* sym) {
 	return 0;
 }
 
-void macho_list_symbols(macho_t* macho, void (*print_func)(const char*, uint32_t, void*), void* userdata) {
+void macho_list_symbols(macho_t* macho, void (*print_func)(const char*, uint64_t, void*), void* userdata) {
 	int i = 0;
 	int j = 0;
-	nlist* nl = NULL;
+	macho_nlist_t* nl = NULL;
 	macho_symtab_t* symtab = NULL;
 	for (i = 0; i < macho->symtab_count; i++) {
 		symtab = macho->symtabs[i];
@@ -218,20 +218,73 @@ macho_header_t* macho_header_create() {
 }
 
 macho_header_t* macho_header_load(macho_t* macho) {
-	unsigned int size = 0;
-	unsigned int offset = 0;
+	typedef struct macho_disk_header32_t {
+		uint32_t magic;
+		uint32_t cputype;
+		uint32_t cpusubtype;
+		uint32_t filetype;
+		uint32_t ncmds;
+		uint32_t sizeofcmds;
+		uint32_t flags;
+	} macho_disk_header32_t;
+
+	typedef struct macho_disk_header64_t {
+		uint32_t magic;
+		uint32_t cputype;
+		uint32_t cpusubtype;
+		uint32_t filetype;
+		uint32_t ncmds;
+		uint32_t sizeofcmds;
+		uint32_t flags;
+		uint32_t reserved;
+	} macho_disk_header64_t;
+
 	unsigned char* data = NULL;
+	unsigned int offset = 0;
 	macho_header_t* header = NULL;
-	if (macho) {
-		data = macho->data;
-		size = macho->size;
-		offset = macho->offset;
-		header = macho_header_create();
-		if (header) {
-			memcpy(header, &data[offset], sizeof(macho_header_t));
-			macho->offset += sizeof(macho_header_t);
-		}
+
+	if (macho == NULL) {
+		return NULL;
 	}
+
+	data = macho->data;
+	offset = macho->offset;
+	header = macho_header_create();
+	if (header == NULL) {
+		return NULL;
+	}
+
+	uint32_t magic = 0;
+	memcpy(&magic, &data[offset], sizeof(uint32_t));
+
+	if (magic == MACHO_MAGIC_64 || magic == MACHO_CIGAM_64) {
+		macho_disk_header64_t disk = { 0 };
+		memcpy(&disk, &data[offset], sizeof(macho_disk_header64_t));
+		header->magic = disk.magic;
+		header->cputype = disk.cputype;
+		header->cpusubtype = disk.cpusubtype;
+		header->filetype = disk.filetype;
+		header->ncmds = disk.ncmds;
+		header->sizeofcmds = disk.sizeofcmds;
+		header->flags = disk.flags;
+		header->reserved = disk.reserved;
+		header->is_64 = 1;
+		macho->offset += sizeof(macho_disk_header64_t);
+	} else {
+		macho_disk_header32_t disk = { 0 };
+		memcpy(&disk, &data[offset], sizeof(macho_disk_header32_t));
+		header->magic = disk.magic;
+		header->cputype = disk.cputype;
+		header->cpusubtype = disk.cpusubtype;
+		header->filetype = disk.filetype;
+		header->ncmds = disk.ncmds;
+		header->sizeofcmds = disk.sizeofcmds;
+		header->flags = disk.flags;
+		header->reserved = 0;
+		header->is_64 = 0;
+		macho->offset += sizeof(macho_disk_header32_t);
+	}
+
 	return header;
 }
 
@@ -245,6 +298,9 @@ void macho_header_debug(macho_header_t* header) {
 		debug("\t\t     ncmds = 0x%08x\n", header->ncmds);
 		debug("\t\tsizeofcmds = 0x%08x\n", header->sizeofcmds);
 		debug("\t\t     flags = 0x%08x\n", header->flags);
+		if (header->is_64) {
+			debug("\t\t  reserved = 0x%08x\n", header->reserved);
+		}
 		debug("\t\n");
 	}
 }
@@ -263,10 +319,12 @@ int macho_handle_command(macho_t* macho, macho_command_t* command) {
 		//  if a symbol table, then load a symbol table... etc...
 		switch (command->info->cmd) {
 		case MACHO_CMD_SEGMENT:
-			// segment of this file to be mapped
+	case MACHO_CMD_SEGMENT_64:
+		// segment of this file to be mapped
 		{
-			macho_segment_t* seg = macho_segment_load(macho->data,
-					command->offset);
+		uint8_t is_segment_64 = (command->info->cmd == MACHO_CMD_SEGMENT_64);
+		macho_segment_t* seg = macho_segment_load(macho->data,
+				command->offset, is_segment_64);
 			if (seg) {
 				macho->segments[macho->segment_count++] = seg;
 			} else {
@@ -278,7 +336,8 @@ int macho_handle_command(macho_t* macho, macho_command_t* command) {
 		case MACHO_CMD_SYMTAB:
 			// link-edit stab symbol table info
 		{
-			macho_symtab_t* symtab = macho_symtab_load(macho->data+command->offset, macho->data);
+		uint8_t is_64 = (macho->header && macho->header->is_64) ? 1 : 0;
+		macho_symtab_t* symtab = macho_symtab_load(macho->data+command->offset, macho->data, is_64);
 			if (symtab) {
 				macho->symtabs[macho->symtab_count++] = symtab;
 			} else {

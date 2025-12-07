@@ -27,21 +27,23 @@ typedef struct macho_segment_cmd_t {
 	uint32_t cmd;
 	uint32_t cmdsize;
 	char segname[16];
-	uint32_t vmaddr;
-	uint32_t vmsize;
-	uint32_t fileoff;
-	uint32_t filesize;
+	uint64_t vmaddr;
+	uint64_t vmsize;
+	uint64_t fileoff;
+	uint64_t filesize;
 	uint32_t maxprot;
 	uint32_t initprot;
 	uint32_t nsects;
 	uint32_t flags;
+	uint8_t is_64;
 } macho_segment_cmd_t;
 
 typedef struct macho_segment_t {
 	char* name;
-	uint32_t size;
-	uint32_t offset;
-	uint32_t address;
+	uint64_t size;
+	uint64_t offset;
+	uint64_t address;
+	uint8_t is_64;
 	unsigned char* data;
 	macho_segment_cmd_t* command;
 	macho_section_t** sections;
@@ -51,7 +53,7 @@ typedef struct macho_segment_t {
  * Mach-O Segment Functions
  */
 macho_segment_t* macho_segment_create();
-macho_segment_t* macho_segment_load(unsigned char* data, unsigned int offset);
+macho_segment_t* macho_segment_load(unsigned char* data, unsigned int offset, uint8_t is_64);
 void macho_segment_debug(macho_segment_t* segment);
 void macho_segment_free(macho_segment_t* segment);
 
@@ -59,7 +61,7 @@ void macho_segment_free(macho_segment_t* segment);
  * Mach-O Segment Info Functions
  */
 macho_segment_cmd_t* macho_segment_cmd_create();
-macho_segment_cmd_t* macho_segment_cmd_load(unsigned char* data, unsigned int offset);
+macho_segment_cmd_t* macho_segment_cmd_load(unsigned char* data, unsigned int offset, uint8_t is_64);
 void macho_segment_cmd_debug(macho_segment_cmd_t* cmd);
 void macho_segment_cmd_free(macho_segment_cmd_t* cmd);
 
