@@ -20,6 +20,7 @@
 #ifndef MACHO_SEGMENT_H_
 #define MACHO_SEGMENT_H_
 
+#include <stdint.h>
 #include <chronic/chronic.h>
 #include <macho/section.h>
 

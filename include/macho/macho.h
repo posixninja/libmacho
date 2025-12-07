@@ -20,6 +20,7 @@
 #ifndef MACHO_H_
 #define MACHO_H_
 
+#include <stdint.h>
 #include <chronic/chronic.h>
 #include <macho/symtab.h>
 #include <macho/segment.h>
@@ -30,6 +31,8 @@
 #define MACHO_CIGAM_32   0xcefaedfe
 #define MACHO_MAGIC_64   0xfeedfacf
 #define MACHO_CIGAM_64   0xcffaedfe
+#define MACHO_FAT_MAGIC  0xcafebabe
+#define MACHO_FAT_CIGAM  0xbebafeca
 
 typedef struct macho_header_t {
 	uint32_t magic;
@@ -44,6 +47,10 @@ typedef struct macho_header_t {
 } macho_header_t;
 
 typedef struct macho_t {
+	uint8_t* raw_data;
+	uint32_t raw_size;
+	uint32_t image_offset;
+	uint8_t is_fat;
 	uint8_t* data;
 	uint32_t size;
 	uint32_t offset;

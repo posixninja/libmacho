@@ -38,7 +38,6 @@ macho_segment_t* macho_segment_create() {
 }
 
 macho_segment_t* macho_segment_load(unsigned char* data, unsigned int offset, uint8_t is_64) {
-	unsigned char* address = NULL;
 	macho_segment_t* segment = macho_segment_create();
 	if (segment) {
 		segment->command = macho_segment_cmd_load(data, offset, is_64);
@@ -66,8 +65,11 @@ macho_segment_t* macho_segment_load(unsigned char* data, unsigned int offset, ui
 }
 
 void macho_segment_debug(macho_segment_t* segment) {
+	if (segment == NULL) {
+		return;
+	}
 	debug("\tSegment:\n");
-	debug("\t\tname: %s\n", segment->name);
+	debug("\t\tname: %s\n", (segment->name ? segment->name : "(null)"));
 	debug("\t\tsize: 0x%016" PRIx64 "\n", segment->size);
 	debug("\t\toffset: 0x%016" PRIx64 "\n", segment->offset);
 	debug("\t\taddress: 0x%016" PRIx64 "\n", segment->address);
@@ -97,6 +99,9 @@ macho_segment_cmd_t* macho_segment_cmd_create() {
 }
 
 macho_segment_cmd_t* macho_segment_cmd_load(unsigned char* data, unsigned int offset, uint8_t is_64) {
+	if (data == NULL) {
+		return NULL;
+	}
 	typedef struct macho_segment_cmd32_disk_t {
 		uint32_t cmd;
 		uint32_t cmdsize;

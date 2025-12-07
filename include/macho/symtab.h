@@ -20,6 +20,7 @@
 #ifndef MACHO_SYMTAB_H_
 #define MACHO_SYMTAB_H_
 
+#include <stdint.h>
 #include <chronic/chronic.h>
 
 typedef struct macho_symtab_cmd_t {
