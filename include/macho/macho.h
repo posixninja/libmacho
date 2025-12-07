@@ -26,6 +26,11 @@
 #include <macho/section.h>
 #include <macho/command.h>
 
+#define MACHO_MAGIC_32   0xfeedface
+#define MACHO_CIGAM_32   0xcefaedfe
+#define MACHO_MAGIC_64   0xfeedfacf
+#define MACHO_CIGAM_64   0xcffaedfe
+
 typedef struct macho_header_t {
 	uint32_t magic;
 	uint32_t cputype;
@@ -34,6 +39,8 @@ typedef struct macho_header_t {
 	uint32_t ncmds;
 	uint32_t sizeofcmds;
 	uint32_t flags;
+	uint32_t reserved;
+	uint8_t is_64;
 } macho_header_t;
 
 typedef struct macho_t {
@@ -55,8 +62,8 @@ typedef struct macho_t {
 macho_t* macho_create();
 macho_t* macho_open(const char* path);
 macho_t* macho_load(unsigned char* data, unsigned int size);
-uint32_t macho_lookup(macho_t* macho, const char* sym);
-void macho_list_symbols(macho_t* macho, void (*print_func)(const char*, uint32_t, void*), void* userdata);
+uint64_t macho_lookup(macho_t* macho, const char* sym);
+void macho_list_symbols(macho_t* macho, void (*print_func)(const char*, uint64_t, void*), void* userdata);
 void macho_debug(macho_t* macho);
 void macho_free(macho_t* macho);
 

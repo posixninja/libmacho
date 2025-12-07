@@ -31,7 +31,7 @@ typedef struct macho_symtab_cmd_t {
 	uint32_t strsize;	/* string table size in bytes */
 } macho_symtab_cmd_t;
 
-typedef struct nlist {
+typedef struct macho_nlist_t {
 	union {
 		char *n_name; /* resolved symbol name */
 		int32_t n_strx; /* index into the string table */
@@ -39,12 +39,13 @@ typedef struct nlist {
 	uint8_t n_type; /* type flag, see below */
 	uint8_t n_sect; /* section number or NO_SECT */
 	int16_t n_desc; /* see <mach-o/stab.h> */
-	uint32_t n_value; /* value of this symbol (or stab offset) */
-} nlist;
+	uint64_t n_value; /* value of this symbol (or stab offset) */
+} macho_nlist_t;
 
 typedef struct macho_symtab_t {
 	uint32_t nsyms;
-	struct nlist* symbols;
+	uint8_t is_64;
+	macho_nlist_t* symbols;
 	macho_symtab_cmd_t* cmd;
 } macho_symtab_t;
 
@@ -52,7 +53,7 @@ typedef struct macho_symtab_t {
  * Mach-O Symtab Functions
  */
 macho_symtab_t* macho_symtab_create();
-macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data);
+macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data, uint8_t is_64);
 void macho_symtab_debug(macho_symtab_t* symtab);
 void macho_symtab_free(macho_symtab_t* symtab);
 

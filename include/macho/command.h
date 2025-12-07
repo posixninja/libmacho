@@ -45,6 +45,7 @@
 #define	MACHO_CMD_SUB_LIBRARY      0x15 // sub library
 #define	MACHO_CMD_TWOLEVEL_HINTS   0x16 // two-level namespace lookup hints
 #define	MACHO_CMD_PREBIND_CKSUM    0x17 // prebind checksum
+#define MACHO_CMD_SEGMENT_64       0x19 // 64-bit segment of this file to be mapped
 
 
 typedef struct macho_command_info_t {
