@@ -37,15 +37,18 @@ macho_segment_t* macho_segment_create() {
 	return segment;
 }
 
-macho_segment_t* macho_segment_load(unsigned char* data, unsigned int offset, uint8_t is_64) {
+macho_segment_t* macho_segment_load(unsigned char* data, unsigned int offset, const macho_arch_ops_t* arch) {
+	if (arch == NULL) {
+		return NULL;
+	}
 	macho_segment_t* segment = macho_segment_create();
 	if (segment) {
-		segment->command = macho_segment_cmd_load(data, offset, is_64);
+		segment->command = macho_segment_cmd_load(arch, data, offset);
 		if (!segment->command) {
 			macho_segment_free(segment);
 			return NULL;
 		}
-		segment->is_64 = is_64;
+		segment->is_64 = arch->is_64;
 		segment->name = malloc(sizeof(segment->command->segname) + 1);
 		if (segment->name) {
 			memcpy(segment->name, segment->command->segname, sizeof(segment->command->segname));
@@ -98,76 +101,19 @@ macho_segment_cmd_t* macho_segment_cmd_create() {
 	return info;
 }
 
-macho_segment_cmd_t* macho_segment_cmd_load(unsigned char* data, unsigned int offset, uint8_t is_64) {
+macho_segment_cmd_t* macho_segment_cmd_load(const macho_arch_ops_t* arch, unsigned char* data, unsigned int offset) {
 	if (data == NULL) {
 		return NULL;
 	}
-	typedef struct macho_segment_cmd32_disk_t {
-		uint32_t cmd;
-		uint32_t cmdsize;
-		char segname[16];
-		uint32_t vmaddr;
-		uint32_t vmsize;
-		uint32_t fileoff;
-		uint32_t filesize;
-		uint32_t maxprot;
-		uint32_t initprot;
-		uint32_t nsects;
-		uint32_t flags;
-	} macho_segment_cmd32_disk_t;
-
-	typedef struct macho_segment_cmd64_disk_t {
-		uint32_t cmd;
-		uint32_t cmdsize;
-		char segname[16];
-		uint64_t vmaddr;
-		uint64_t vmsize;
-		uint64_t fileoff;
-		uint64_t filesize;
-		uint32_t maxprot;
-		uint32_t initprot;
-		uint32_t nsects;
-		uint32_t flags;
-	} macho_segment_cmd64_disk_t;
-
+	if (arch == NULL) {
+		return NULL;
+	}
 	macho_segment_cmd_t* cmd = macho_segment_cmd_create();
 	if (cmd == NULL) {
 		return NULL;
 	}
 
-	if (is_64) {
-		macho_segment_cmd64_disk_t disk = { 0 };
-		memcpy(&disk, data+offset, sizeof(macho_segment_cmd64_disk_t));
-		cmd->cmd = disk.cmd;
-		cmd->cmdsize = disk.cmdsize;
-		memcpy(cmd->segname, disk.segname, sizeof(disk.segname));
-		cmd->segname[sizeof(cmd->segname) - 1] = '\0';
-		cmd->vmaddr = disk.vmaddr;
-		cmd->vmsize = disk.vmsize;
-		cmd->fileoff = disk.fileoff;
-		cmd->filesize = disk.filesize;
-		cmd->maxprot = disk.maxprot;
-		cmd->initprot = disk.initprot;
-		cmd->nsects = disk.nsects;
-		cmd->flags = disk.flags;
-		cmd->is_64 = 1;
-	} else {
-		macho_segment_cmd32_disk_t disk = { 0 };
-		memcpy(&disk, data+offset, sizeof(macho_segment_cmd32_disk_t));
-		cmd->cmd = disk.cmd;
-		cmd->cmdsize = disk.cmdsize;
-		memcpy(cmd->segname, disk.segname, sizeof(disk.segname));
-		cmd->segname[sizeof(cmd->segname) - 1] = '\0';
-		cmd->vmaddr = disk.vmaddr;
-		cmd->vmsize = disk.vmsize;
-		cmd->fileoff = disk.fileoff;
-		cmd->filesize = disk.filesize;
-		cmd->maxprot = disk.maxprot;
-		cmd->initprot = disk.initprot;
-		cmd->nsects = disk.nsects;
-		cmd->flags = disk.flags;
-		cmd->is_64 = 0;
-	}
+	arch->segment_reader(cmd, data + offset);
 	//macho_segment_cmd_debug(cmd);
 	return cmd;
 }

@@ -37,28 +37,8 @@ macho_symtab_t* macho_symtab_create() {
 	return symtab;
 }
 
-macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data, uint8_t is_64) {
-	typedef struct macho_nlist32_disk_t {
-		union {
-			int32_t n_strx;
-		} n_un;
-		uint8_t n_type;
-		uint8_t n_sect;
-		int16_t n_desc;
-		uint32_t n_value;
-	} macho_nlist32_disk_t;
-
-	typedef struct macho_nlist64_disk_t {
-		union {
-			int32_t n_strx;
-		} n_un;
-		uint8_t n_type;
-		uint8_t n_sect;
-		int16_t n_desc;
-		uint64_t n_value;
-	} macho_nlist64_disk_t;
-
-	if ((cmd == NULL) || (data == NULL)) {
+macho_symtab_t* macho_symtab_load(const macho_arch_ops_t* arch, unsigned char* cmd, unsigned char* data) {
+	if ((cmd == NULL) || (data == NULL) || (arch == NULL)) {
 		return NULL;
 	}
 
@@ -73,7 +53,7 @@ macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data, uint8
 		return NULL;
 	}
 
-	symtab->is_64 = is_64 ? 1 : 0;
+	symtab->is_64 = arch->is_64 ? 1 : 0;
 	symtab->nsyms = symtab->cmd->nsyms;
 	if (symtab->nsyms == 0) {
 		symtab->symbols = NULL;
@@ -90,28 +70,12 @@ macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data, uint8
 
 	unsigned char* sym_base = data + symtab->cmd->symoff;
 	unsigned char* str_base = data + symtab->cmd->stroff;
-	size_t entry_size = symtab->is_64 ? sizeof(macho_nlist64_disk_t) : sizeof(macho_nlist32_disk_t);
+	size_t entry_size = arch->nlist_entry_size;
 
 	uint32_t i;
 	for (i = 0; i < symtab->nsyms; i++) {
 		macho_nlist_t* dest = &symtab->symbols[i];
-		if (symtab->is_64) {
-			macho_nlist64_disk_t disk = { 0 };
-			memcpy(&disk, sym_base + (i * entry_size), sizeof(macho_nlist64_disk_t));
-			dest->n_un.n_strx = disk.n_un.n_strx;
-			dest->n_type = disk.n_type;
-			dest->n_sect = disk.n_sect;
-			dest->n_desc = disk.n_desc;
-			dest->n_value = disk.n_value;
-		} else {
-			macho_nlist32_disk_t disk = { 0 };
-			memcpy(&disk, sym_base + (i * entry_size), sizeof(macho_nlist32_disk_t));
-			dest->n_un.n_strx = disk.n_un.n_strx;
-			dest->n_type = disk.n_type;
-			dest->n_sect = disk.n_sect;
-			dest->n_desc = disk.n_desc;
-			dest->n_value = disk.n_value;
-		}
+		arch->nlist_reader(dest, sym_base + (i * entry_size));
 
 		if ((dest->n_un.n_strx < 0)
 				|| ((uint32_t) dest->n_un.n_strx >= symtab->cmd->strsize)) {

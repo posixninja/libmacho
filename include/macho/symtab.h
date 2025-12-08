@@ -22,6 +22,7 @@
 
 #include <stdint.h>
 #include <chronic/chronic.h>
+#include <macho/arch.h>
 
 typedef struct macho_symtab_cmd_t {
 	uint32_t cmd;		/* LC_SYMTAB */
@@ -54,7 +55,7 @@ typedef struct macho_symtab_t {
  * Mach-O Symtab Functions
  */
 macho_symtab_t* macho_symtab_create();
-macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data, uint8_t is_64);
+macho_symtab_t* macho_symtab_load(const macho_arch_ops_t* arch, unsigned char* cmd, unsigned char* data);
 void macho_symtab_debug(macho_symtab_t* symtab);
 void macho_symtab_free(macho_symtab_t* symtab);
 

@@ -1,1 +1,17 @@
-Sample readme file for libmacho project.
+libmacho - Mach-O inspection helpers
+====================================
+
+This library provides a lightweight parser for Mach-O binaries along with the
+`machoman` utility. Recent updates add a proper abstraction layer for 32-bit and
+64-bit images, native FAT binary awareness, and utility helpers for working with
+multi-architecture files.
+
+Highlights
+----------
+- Unified 32/64-bit architecture operations exposed through `macho/arch.h`.
+- Automatic FAT binary detection with slice selection via `macho_select_architecture()`.
+- Buffer and file level helpers in `macho/fat.h` to thin or combine executables.
+- `machoman` gained the `--arch CPU[:SUB]` option to inspect a specific slice.
+
+See `machoman --help` for usage examples or inspect `include/macho/*.h` for the
+public API surface.

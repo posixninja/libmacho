@@ -1,1 +1,9 @@
-Sample NEWS file for libmacho project.
+libmacho - Recent changes
+=========================
+
+- Added architecture abstraction helpers that split the parsing logic for
+  32-bit and 64-bit Mach-O images while keeping a single public API.
+- Introduced a FAT parser (`macho/fat.h`) plus helpers to thin or combine
+  multi-architecture executables.
+- `machoman` now accepts `--arch CPU[:SUB]` to inspect a specific slice inside a
+  FAT binary.

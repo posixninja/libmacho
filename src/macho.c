@@ -27,176 +27,74 @@
 #include <macho/macho.h>
 #include <macho/symtab.h>
 
-static uint32_t macho_swap32(uint32_t value) {
-	return ((value & 0x000000FFU) << 24) |
-	       ((value & 0x0000FF00U) << 8) |
-	       ((value & 0x00FF0000U) >> 8) |
-	       ((value & 0xFF000000U) >> 24);
-}
-
-static int macho_extract_fat_slice(unsigned char* file_data, unsigned int file_size,
-		unsigned char** image_data, unsigned int* image_size, uint32_t* image_offset) {
-	typedef struct macho_fat_header_t {
-		uint32_t magic;
-		uint32_t nfat_arch;
-	} macho_fat_header_t;
-
-	typedef struct macho_fat_arch_t {
-		uint32_t cputype;
-		uint32_t cpusubtype;
-		uint32_t offset;
-		uint32_t size;
-		uint32_t align;
-	} macho_fat_arch_t;
-
-	if ((file_data == NULL) || (file_size < sizeof(uint32_t)) ||
-		(image_data == NULL) || (image_size == NULL)) {
-		return -1;
-	}
-
-	uint32_t magic = 0;
-	memcpy(&magic, file_data, sizeof(uint32_t));
-	if ((magic != MACHO_FAT_MAGIC) && (magic != MACHO_FAT_CIGAM)) {
-		*image_data = file_data;
-		*image_size = file_size;
-		if (image_offset) {
-			*image_offset = 0;
-		}
-		return 0;
-	}
-
-	int needs_swap = (magic == MACHO_FAT_CIGAM);
-	if (file_size < sizeof(macho_fat_header_t)) {
-		error("Fat Mach-O header truncated\n");
-		return -1;
-	}
-
-	macho_fat_header_t header = { 0 };
-	memcpy(&header, file_data, sizeof(header));
-	uint32_t nfat_arch = needs_swap ? macho_swap32(header.nfat_arch) : header.nfat_arch;
-	if (nfat_arch == 0) {
-		error("Fat Mach-O contains zero architectures\n");
-		return -1;
-	}
-
-	size_t directory_size = sizeof(header) + (size_t) nfat_arch * sizeof(macho_fat_arch_t);
-	if ((size_t) file_size < directory_size) {
-		error("Fat Mach-O directory truncated\n");
-		return -1;
-	}
-
-	unsigned char* preferred_data = NULL;
-	unsigned int preferred_size = 0;
-	uint32_t preferred_offset = 0;
-
-	unsigned char* arch_ptr = file_data + sizeof(header);
-	uint32_t i;
-	for (i = 0; i < nfat_arch; i++) {
-		macho_fat_arch_t arch = { 0 };
-		memcpy(&arch, arch_ptr + (i * sizeof(macho_fat_arch_t)), sizeof(macho_fat_arch_t));
-		uint32_t arch_offset = needs_swap ? macho_swap32(arch.offset) : arch.offset;
-		uint32_t arch_size = needs_swap ? macho_swap32(arch.size) : arch.size;
-
-		if ((arch_offset >= file_size) || (arch_size == 0) ||
-			(arch_size > (file_size - arch_offset))) {
-			continue;
-		}
-
-		unsigned char* candidate = file_data + arch_offset;
-		if (preferred_data == NULL) {
-			preferred_data = candidate;
-			preferred_size = arch_size;
-			preferred_offset = arch_offset;
-		}
-
-		uint32_t candidate_magic = 0;
-		memcpy(&candidate_magic, candidate, sizeof(uint32_t));
-		if ((candidate_magic == MACHO_MAGIC_64) || (candidate_magic == MACHO_CIGAM_64)) {
-			preferred_data = candidate;
-			preferred_size = arch_size;
-			preferred_offset = arch_offset;
-			break;
-		}
-	}
-
-	if (preferred_data == NULL) {
-		error("Could not locate a valid architecture slice in fat binary\n");
-		return -1;
-	}
-
-	*image_data = preferred_data;
-	*image_size = preferred_size;
-	if (image_offset) {
-		*image_offset = preferred_offset;
-	}
-	return 1;
-}
-
-/*
- * Mach-O Functions
- */
-macho_t* macho_create() {
-	macho_t* macho = (macho_t*) malloc(sizeof(macho_t));
-	if (macho) {
-		memset(macho, '\0', sizeof(macho));
-	}
-	return macho;
-}
-
-macho_t* macho_load(unsigned char* data, unsigned int size) {
-	int i = 0;
-	int err = 0;
-	macho_t* macho = NULL;
-	unsigned char* image_data = data;
-	unsigned int image_size = size;
-	uint32_t image_offset = 0;
-
-	if ((data == NULL) || (size == 0)) {
-		return NULL;
-	}
-
-	macho = macho_create();
+static void macho_reset_parsed_state(macho_t* macho) {
 	if (macho == NULL) {
-		return NULL;
+		return;
+	}
+	if (macho->header) {
+		macho_header_free(macho->header);
+		macho->header = NULL;
+	}
+	if (macho->commands) {
+		macho_commands_free(macho->commands);
+		macho->commands = NULL;
+	}
+	if (macho->segments) {
+		macho_segments_free(macho->segments);
+		macho->segments = NULL;
+	}
+	if (macho->symtabs) {
+		macho_symtabs_free(macho->symtabs);
+		macho->symtabs = NULL;
+	}
+	macho->command_count = 0;
+	macho->segment_count = 0;
+	macho->symtab_count = 0;
+	macho->arch_ops = NULL;
+}
+
+static int macho_parse_current_image(macho_t* macho);
+
+static int macho_prepare_image(macho_t* macho, unsigned char* image_data, unsigned int image_size,
+		uint32_t image_offset, const macho_fat_arch_t* slice) {
+	if ((macho == NULL) || (image_data == NULL) || (image_size == 0)) {
+		return -1;
 	}
 
-	err = macho_extract_fat_slice(data, size, &image_data, &image_size, &image_offset);
-	if (err < 0) {
-		error("Unable to extract Mach-O image slice\n");
-		macho_free(macho);
-		return NULL;
-	}
-
-	macho->raw_data = data;
-	macho->raw_size = size;
-	macho->image_offset = image_offset;
-	macho->is_fat = (err > 0) ? 1 : 0;
-	macho->offset = 0;
+	macho_reset_parsed_state(macho);
 	macho->data = image_data;
-macho->size = image_size;
+	macho->size = image_size;
+	macho->image_offset = image_offset;
+	macho->active_slice = slice;
+	macho->offset = 0;
 
-	//debug("Loading Mach-O header\n");
+	return macho_parse_current_image(macho);
+}
+
+static int macho_parse_current_image(macho_t* macho) {
+	if ((macho == NULL) || (macho->data == NULL)) {
+		return -1;
+	}
+
 	macho->header = macho_header_load(macho);
 	if (macho->header == NULL) {
-		error("Unable to load Mach-O header information\n");
-		macho_free(macho);
-		return NULL;
+		macho_reset_parsed_state(macho);
+		return -1;
 	}
 
-	//debug("Loading Mach-O command\n");
 	macho->command_count = macho->header->ncmds;
 	macho->commands = macho_commands_load(macho);
 	if (macho->commands == NULL) {
 		error("Unable to parse Mach-O load commands\n");
-		macho_free(macho);
-		return NULL;
+		macho_reset_parsed_state(macho);
+		return -1;
 	}
 
-	// initialize the buffers for the different types.
 	uint32_t seg_count = 0;
 	uint32_t symtab_count = 0;
 	uint32_t unk_count = 0;
-	for (i = 0; i < macho->command_count; i++) {
+	int i;
+	for (i = 0; i < (int) macho->command_count; i++) {
 		switch (macho->commands[i]->info->cmd) {
 		case MACHO_CMD_SEGMENT:
 		case MACHO_CMD_SEGMENT_64:
@@ -214,15 +112,15 @@ macho->size = image_size;
 	macho->segments = macho_segments_create(seg_count);
 	if ((seg_count > 0) && (macho->segments == NULL)) {
 		error("Unable to allocate segment storage\n");
-		macho_free(macho);
-		return NULL;
+		macho_reset_parsed_state(macho);
+		return -1;
 	}
 	macho->segment_count = 0;
 	macho->symtabs = macho_symtabs_create(symtab_count);
 	if ((symtab_count > 0) && (macho->symtabs == NULL)) {
 		error("Unable to allocate symtab storage\n");
-		macho_free(macho);
-		return NULL;
+		macho_reset_parsed_state(macho);
+		return -1;
 	}
 	macho->symtab_count = 0;
 
@@ -230,12 +128,80 @@ macho->size = image_size;
 		error("WARNING: %d unhandled Mach-O Commands\n", unk_count);
 	}
 
-	//debug("Handling %d Mach-O commands\n", macho->command_count);
-	for (i = 0; i < macho->command_count; i++) {
-		macho_handle_command(macho, macho->commands[i]);
+	for (i = 0; i < (int) macho->command_count; i++) {
+		if (macho_handle_command(macho, macho->commands[i]) < 0) {
+			error("Unable to handle Mach-O command at index %d\n", i);
+		}
 	}
-	// TODO: Remove the line below this once debugging is finished
-	//macho_debug(macho);
+
+	return 0;
+}
+
+/*
+ * Mach-O Functions
+ */
+macho_t* macho_create() {
+	macho_t* macho = (macho_t*) malloc(sizeof(macho_t));
+	if (macho) {
+		memset(macho, '\0', sizeof(macho));
+	}
+	return macho;
+}
+
+macho_t* macho_load(unsigned char* data, unsigned int size) {
+	if ((data == NULL) || (size == 0)) {
+		return NULL;
+	}
+
+	macho_t* macho = macho_create();
+	if (macho == NULL) {
+		return NULL;
+	}
+
+	macho->raw_data = data;
+	macho->raw_size = size;
+	macho->slice_count = 0;
+	macho->is_fat = 0;
+	macho->fat = NULL;
+	macho->active_slice = NULL;
+
+	macho_fat_t* fat = NULL;
+	int fat_state = macho_fat_inspect(data, size, &fat);
+	if (fat_state < 0) {
+		error("Unable to parse Mach-O fat header\n");
+		macho_free(macho);
+		return NULL;
+	}
+
+	if (fat_state > 0) {
+		macho->is_fat = 1;
+		macho->fat = fat;
+		macho->slice_count = fat->nfat_arch;
+		const macho_fat_arch_t* preferred = macho_fat_preferred_arch(fat, data, size);
+		if (preferred == NULL) {
+			error("Unable to locate a valid architecture slice in fat binary\n");
+			macho_free(macho);
+			return NULL;
+		}
+		if ((preferred->offset >= size) || (preferred->size == 0) ||
+				(preferred->size > (size - preferred->offset))) {
+			error("Preferred architecture slice truncated\n");
+			macho_free(macho);
+			return NULL;
+		}
+		if (macho_prepare_image(macho, data + preferred->offset, preferred->size,
+				preferred->offset, preferred) < 0) {
+			error("Unable to parse preferred Mach-O slice\n");
+			macho_free(macho);
+			return NULL;
+		}
+	} else {
+		if (macho_prepare_image(macho, data, size, 0, NULL) < 0) {
+			error("Unable to parse Mach-O image\n");
+			macho_free(macho);
+			return NULL;
+		}
+	}
 
 	return macho;
 }
@@ -319,6 +285,16 @@ void macho_list_symbols(macho_t* macho, void (*print_func)(const char*, uint64_t
 void macho_debug(macho_t* macho) {
 	if (macho) {
 		debug("Mach-O:\n");
+		if (macho->is_fat && macho->fat && macho->fat->arches) {
+			debug("\tFat binary with %u slice(s)\n", macho->fat->nfat_arch);
+			uint32_t i;
+			for (i = 0; i < macho->fat->nfat_arch; i++) {
+				const macho_fat_arch_t* arch = &macho->fat->arches[i];
+				const char* marker = (arch == macho->active_slice) ? "*" : " ";
+				debug("\t\t%s cputype=0x%08x cpusubtype=0x%08x offset=0x%08x size=0x%08x align=%u\n",
+						marker, arch->cputype, arch->cpusubtype, arch->offset, arch->size, arch->align);
+			}
+		}
 		if (macho->header)
 			macho_header_debug(macho->header);
 		if (macho->commands)
@@ -331,34 +307,40 @@ void macho_debug(macho_t* macho) {
 
 void macho_free(macho_t* macho) {
 	if (macho) {
-		if (macho->header) {
-			macho_header_free(macho->header);
-			macho->header = NULL;
+		macho_reset_parsed_state(macho);
+		if (macho->fat) {
+			macho_fat_free(macho->fat);
+			macho->fat = NULL;
 		}
-		if (macho->commands) {
-			macho_commands_free(macho->commands);
-			macho->commands = NULL;
-		}
-
-		if (macho->segments) {
-			macho_segments_free(macho->segments);
-			macho->segments = NULL;
-		}
-		if (macho->symtabs) {
-			macho_symtabs_free(macho->symtabs);
-			macho->symtabs = NULL;
-		}
-
-		macho->data = NULL;
-		macho->size = 0;
-		macho->offset = 0;
 		macho->raw_data = NULL;
 		macho->raw_size = 0;
 		macho->image_offset = 0;
 		macho->is_fat = 0;
-
+		macho->slice_count = 0;
+		macho->active_slice = NULL;
+		macho->data = NULL;
+		macho->size = 0;
+		macho->offset = 0;
 		free(macho);
 	}
+}
+
+int macho_select_architecture(macho_t* macho, uint32_t cputype, uint32_t cpusubtype) {
+	if ((macho == NULL) || (macho->fat == NULL) || (macho->raw_data == NULL)) {
+		return -1;
+	}
+
+	const macho_fat_arch_t* arch = macho_fat_find_arch(macho->fat, cputype, cpusubtype);
+	if (arch == NULL) {
+		return -1;
+	}
+
+	if ((arch->offset >= macho->raw_size) || (arch->size == 0) ||
+		(arch->size > (macho->raw_size - arch->offset))) {
+		return -1;
+	}
+
+	return macho_prepare_image(macho, macho->raw_data + arch->offset, arch->size, arch->offset, arch);
 }
 
 /*
@@ -373,72 +355,34 @@ macho_header_t* macho_header_create() {
 }
 
 macho_header_t* macho_header_load(macho_t* macho) {
-	typedef struct macho_disk_header32_t {
-		uint32_t magic;
-		uint32_t cputype;
-		uint32_t cpusubtype;
-		uint32_t filetype;
-		uint32_t ncmds;
-		uint32_t sizeofcmds;
-		uint32_t flags;
-	} macho_disk_header32_t;
-
-	typedef struct macho_disk_header64_t {
-		uint32_t magic;
-		uint32_t cputype;
-		uint32_t cpusubtype;
-		uint32_t filetype;
-		uint32_t ncmds;
-		uint32_t sizeofcmds;
-		uint32_t flags;
-		uint32_t reserved;
-	} macho_disk_header64_t;
-
-	unsigned char* data = NULL;
-	unsigned int offset = 0;
-	macho_header_t* header = NULL;
-
 	if (macho == NULL) {
 		return NULL;
 	}
 
-	data = macho->data;
-	offset = macho->offset;
-	header = macho_header_create();
+	unsigned char* data = macho->data;
+	unsigned int offset = macho->offset;
+	macho_header_t* header = macho_header_create();
 	if (header == NULL) {
 		return NULL;
 	}
 
 	uint32_t magic = 0;
 	memcpy(&magic, &data[offset], sizeof(uint32_t));
-
-	if (magic == MACHO_MAGIC_64 || magic == MACHO_CIGAM_64) {
-		macho_disk_header64_t disk = { 0 };
-		memcpy(&disk, &data[offset], sizeof(macho_disk_header64_t));
-		header->magic = disk.magic;
-		header->cputype = disk.cputype;
-		header->cpusubtype = disk.cpusubtype;
-		header->filetype = disk.filetype;
-		header->ncmds = disk.ncmds;
-		header->sizeofcmds = disk.sizeofcmds;
-		header->flags = disk.flags;
-		header->reserved = disk.reserved;
-		header->is_64 = 1;
-		macho->offset += sizeof(macho_disk_header64_t);
-	} else {
-		macho_disk_header32_t disk = { 0 };
-		memcpy(&disk, &data[offset], sizeof(macho_disk_header32_t));
-		header->magic = disk.magic;
-		header->cputype = disk.cputype;
-		header->cpusubtype = disk.cpusubtype;
-		header->filetype = disk.filetype;
-		header->ncmds = disk.ncmds;
-		header->sizeofcmds = disk.sizeofcmds;
-		header->flags = disk.flags;
-		header->reserved = 0;
-		header->is_64 = 0;
-		macho->offset += sizeof(macho_disk_header32_t);
+	if ((magic != MACHO_MAGIC_32) && (magic != MACHO_CIGAM_32) &&
+		(magic != MACHO_MAGIC_64) && (magic != MACHO_CIGAM_64)) {
+		macho_header_free(header);
+		return NULL;
 	}
+
+	const macho_arch_ops_t* arch_ops = macho_arch_ops_for_magic(magic);
+	if (arch_ops == NULL) {
+		macho_header_free(header);
+		return NULL;
+	}
+
+	arch_ops->header_reader(header, &data[offset]);
+	macho->arch_ops = arch_ops;
+	macho->offset += arch_ops->header_size;
 
 	return header;
 }
@@ -478,12 +422,13 @@ int macho_handle_command(macho_t* macho, macho_command_t* command) {
 		// segment of this file to be mapped
 		{
 		uint8_t is_segment_64 = (command->info->cmd == MACHO_CMD_SEGMENT_64);
+		const macho_arch_ops_t* segment_arch = macho_arch_ops_for_flag(is_segment_64);
 	if (macho->segments == NULL) {
 		error("Segment storage not initialized\n");
 		return -1;
 	}
 	macho_segment_t* seg = macho_segment_load(macho->data,
-				command->offset, is_segment_64);
+				command->offset, segment_arch);
 			if (seg) {
 				macho->segments[macho->segment_count++] = seg;
 			} else {
@@ -495,12 +440,16 @@ int macho_handle_command(macho_t* macho, macho_command_t* command) {
 		case MACHO_CMD_SYMTAB:
 			// link-edit stab symbol table info
 		{
-		uint8_t is_64 = (macho->header && macho->header->is_64) ? 1 : 0;
+		const macho_arch_ops_t* arch = macho->arch_ops;
 	if (macho->symtabs == NULL) {
 		error("Symtab storage not initialized\n");
 		return -1;
 	}
-	macho_symtab_t* symtab = macho_symtab_load(macho->data+command->offset, macho->data, is_64);
+	if (arch == NULL) {
+		error("Architecture handlers not initialized\n");
+		return -1;
+	}
+	macho_symtab_t* symtab = macho_symtab_load(arch, macho->data+command->offset, macho->data);
 			if (symtab) {
 				macho->symtabs[macho->symtab_count++] = symtab;
 			} else {

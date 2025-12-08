@@ -33,6 +33,28 @@ enum {
 	OP_SEARCH
 } op_mode_t;
 
+static int parse_arch_token(const char* token, uint32_t* cputype, uint32_t* cpusubtype)
+{
+	char* endptr = NULL;
+	if ((token == NULL) || (cputype == NULL) || (cpusubtype == NULL)) {
+		return -1;
+	}
+	unsigned long cpu = strtoul(token, &endptr, 0);
+	if (endptr == token) {
+		return -1;
+	}
+	*cputype = (uint32_t) cpu;
+	if (*endptr == '\0') {
+		*cpusubtype = 0;
+		return 0;
+	}
+	if (*endptr != ':' || *(endptr + 1) == '\0') {
+		return -1;
+	}
+	*cpusubtype = (uint32_t) strtoul(endptr + 1, NULL, 0);
+	return 0;
+}
+
 static void print_usage(int argc, char **argv)
 {
 	char *name = NULL;
@@ -41,6 +63,7 @@ static void print_usage(int argc, char **argv)
 	printf("Usage: %s <mach-o file> [OPTIONS] [PARAMS ...]\n", (name ? name + 1: argv[0]));
 	printf("  -a|--address OFFSET\tget virtual address for given file offset.\n");
 	printf("  -s|--search STRING\tsearch for STRING and print function addresses\n\t\tcontaining references to this string.\n");
+	printf("  -r|--arch CPU[:SUB]\tselect architecture slice inside fat binaries.\n");
 	printf("\n");
 }
 
@@ -74,6 +97,9 @@ int main(int argc, char* argv[])
 	char* search = NULL;
 	int search_len = 0;
 	int mode = (argc < 2) ? OP_NONE : OP_INFO;
+	uint32_t arch_cpu = 0;
+	uint32_t arch_sub = 0;
+	int arch_requested = 0;
 	int i;
 
 	/* parse cmdline args */
@@ -99,6 +125,19 @@ int main(int argc, char* argv[])
 			mode = OP_SEARCH;
 			continue;
 		}
+		else if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--arch")) {
+			i++;
+			if (!argv[i]) {
+				print_usage(argc, argv);
+				return 0;
+			}
+			if (parse_arch_token(argv[i], &arch_cpu, &arch_sub) < 0) {
+				error("Invalid architecture specification: %s\n", argv[i]);
+				return -1;
+			}
+			arch_requested = 1;
+			continue;
+		}
 	}
 
 	if (mode == OP_NONE) {
@@ -109,6 +148,20 @@ int main(int argc, char* argv[])
 	macho_t* macho = macho_open(argv[1]);
 	if(macho == NULL) {
 		error("Unable to open macho file\n");
+		return -1;
+	}
+
+	if (arch_requested) {
+		if (!macho->is_fat) {
+			error("Requested architecture selection, but file is not fat\n");
+			macho_free(macho);
+			return -1;
+		}
+		if (macho_select_architecture(macho, arch_cpu, arch_sub) < 0) {
+			error("Unable to switch to requested architecture slice\n");
+			macho_free(macho);
+			return -1;
+		}
 	}
 
 	switch (mode) {

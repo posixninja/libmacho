@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <chronic/chronic.h>
 #include <macho/section.h>
+#include <macho/arch.h>
 
 typedef struct macho_segment_cmd_t {
 	uint32_t cmd;
@@ -54,7 +55,7 @@ typedef struct macho_segment_t {
  * Mach-O Segment Functions
  */
 macho_segment_t* macho_segment_create();
-macho_segment_t* macho_segment_load(unsigned char* data, unsigned int offset, uint8_t is_64);
+macho_segment_t* macho_segment_load(unsigned char* data, unsigned int offset, const macho_arch_ops_t* arch);
 void macho_segment_debug(macho_segment_t* segment);
 void macho_segment_free(macho_segment_t* segment);
 
@@ -62,7 +63,7 @@ void macho_segment_free(macho_segment_t* segment);
  * Mach-O Segment Info Functions
  */
 macho_segment_cmd_t* macho_segment_cmd_create();
-macho_segment_cmd_t* macho_segment_cmd_load(unsigned char* data, unsigned int offset, uint8_t is_64);
+macho_segment_cmd_t* macho_segment_cmd_load(const macho_arch_ops_t* arch, unsigned char* data, unsigned int offset);
 void macho_segment_cmd_debug(macho_segment_cmd_t* cmd);
 void macho_segment_cmd_free(macho_segment_cmd_t* cmd);
 
