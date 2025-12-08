@@ -5,6 +5,8 @@ lib_LTLIBRARIES = libmacho-1.0.la
 libmacho_1_0_la_CFLAGS = $(AM_CFLAGS)
 libmacho_1_0_la_LDFLAGS = $(AM_LDFLAGS)
 libmacho_1_0_la_SOURCES = \
+						arch.c \
+						fat.c \
 						macho.c \
 						command.c \
 						segment.c \

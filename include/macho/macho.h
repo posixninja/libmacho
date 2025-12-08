@@ -26,6 +26,8 @@
 #include <macho/segment.h>
 #include <macho/section.h>
 #include <macho/command.h>
+#include <macho/arch.h>
+#include <macho/fat.h>
 
 #define MACHO_MAGIC_32   0xfeedface
 #define MACHO_CIGAM_32   0xcefaedfe
@@ -51,6 +53,9 @@ typedef struct macho_t {
 	uint32_t raw_size;
 	uint32_t image_offset;
 	uint8_t is_fat;
+	uint32_t slice_count;
+	macho_fat_t* fat;
+	const macho_fat_arch_t* active_slice;
 	uint8_t* data;
 	uint32_t size;
 	uint32_t offset;
@@ -58,6 +63,7 @@ typedef struct macho_t {
 	uint32_t segment_count;
 	uint32_t symtab_count;
 	macho_header_t* header;
+	const macho_arch_ops_t* arch_ops;
 	macho_command_t** commands;
 	macho_segment_t** segments;
 	macho_symtab_t** symtabs;
@@ -73,6 +79,7 @@ uint64_t macho_lookup(macho_t* macho, const char* sym);
 void macho_list_symbols(macho_t* macho, void (*print_func)(const char*, uint64_t, void*), void* userdata);
 void macho_debug(macho_t* macho);
 void macho_free(macho_t* macho);
+int macho_select_architecture(macho_t* macho, uint32_t cputype, uint32_t cpusubtype);
 
 int macho_handle_command(macho_t* macho, macho_command_t* command);
 
