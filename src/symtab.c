@@ -76,7 +76,7 @@ macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data, uint8
 				uint32_t strx = syms[i].n_strx;
 				symtab->symbols[i].n_type  = syms[i].n_type;
 				symtab->symbols[i].n_sect  = syms[i].n_sect;
-				symtab->symbols[i].n_desc  = (int16_t)syms[i].n_desc;
+				symtab->symbols[i].n_desc  = syms[i].n_desc;
 				symtab->symbols[i].n_value = syms[i].n_value;
 				if (strx >= symtab->cmd->strsize) {
 					symtab->symbols[i].n_un.n_name = NULL;

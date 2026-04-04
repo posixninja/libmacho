@@ -146,7 +146,7 @@ int main(int argc, char* argv[])
 			for (j = 0; j < macho->size; j+=4) {
 				if (*(uint32_t*)(macho->data+j) == saddr) {
 					uint64_t vaddr = get_virtual_address(macho, j);
-					debug("found reference at offset 0x%08x, vaddr=0x%016" PRIx64 "\n", j, vaddr);
+					debug("found reference at offset 0x%016" PRIx64 ", vaddr=0x%016" PRIx64 "\n", (uint64_t)j, vaddr);
 					offset = j;
 					while (offset > 0 && ((*(uint16_t*)(macho->data+offset) & 0xFF0F) != 0xB500)) {
 						offset -= 2;
