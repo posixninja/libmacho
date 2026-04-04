@@ -122,7 +122,7 @@ int main(int argc, char* argv[])
 			if (macho->data[i] != search[0]) {
 				continue;
 			}
-			if ((uint32_t)(i + search_len) > macho->size ||
+			if ((size_t)i + search_len > macho->size ||
 			    memcmp(macho->data + i, search, search_len) != 0) {
 				continue;
 			}
@@ -148,7 +148,7 @@ int main(int argc, char* argv[])
 					uint32_t vaddr = get_virtual_address(macho, j);
 					debug("found reference at offset 0x%08x, vaddr=0x%08x\n", j, vaddr);
 					offset = j;
-					while (offset >= 2 && ((*(uint16_t*)(macho->data+offset) & 0xFF0F) != 0xB500)) {
+					while (offset >= 2 && offset + 2 <= macho->size && ((*(uint16_t*)(macho->data+offset) & 0xFF0F) != 0xB500)) {
 						offset -= 2;
 					}
 					debug("found push instruction at offset 0x%08x\n", offset);
