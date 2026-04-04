@@ -27,4 +27,9 @@ libtool
 *.lo
 *.gcno
 *.gcda
+/tests/test_macho
+/tests/test_header
+/tests/test_command
+/tests/test_segment
+/tests/test_symtab
 

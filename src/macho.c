@@ -43,6 +43,10 @@ macho_t* macho_load(unsigned char* data, unsigned int size) {
 	int err = 0;
 	macho_t* macho = NULL;
 
+	if (!data || size == 0) {
+		return NULL;
+	}
+
 	macho = macho_create();
 	if (macho) {
 		macho->offset = 0;
@@ -73,6 +77,7 @@ macho_t* macho_load(unsigned char* data, unsigned int size) {
 		for (i = 0; i < macho->command_count; i++) {
 			switch (macho->commands[i]->info->cmd) {
 			case MACHO_CMD_SEGMENT:
+			case MACHO_CMD_SEGMENT_64:
 				seg_count++;
 				break;
 			case MACHO_CMD_SYMTAB:
