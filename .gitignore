@@ -3,6 +3,7 @@
 /autom4te.cache/requests
 /stamp-h1
 Makefile
+!tests/Makefile
 /config.status
 /config.log
 /config.h
@@ -27,4 +28,9 @@ libtool
 *.lo
 *.gcno
 *.gcda
+/tests/test_macho
+/tests/test_header
+/tests/test_command
+/tests/test_segment
+/tests/test_symtab
 

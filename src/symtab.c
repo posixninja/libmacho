@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include <chronic/debug.h>
 #include <chronic/chronic.h>
@@ -36,7 +37,7 @@ macho_symtab_t* macho_symtab_create() {
 	return symtab;
 }
 
-macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data) {
+macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data, uint8_t is_64) {
 	macho_symtab_t* symtab = macho_symtab_create();
 	if (symtab) {
 		symtab->cmd = macho_symtab_cmd_load(cmd);
@@ -45,14 +46,40 @@ macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data) {
 			return NULL;
 		}
 		symtab->nsyms = symtab->cmd->nsyms;
-		symtab->symbols = (struct nlist*)(data+symtab->cmd->symoff);
-		int i;
-		for (i = 0; i < symtab->nsyms; i++) {
-			uint32_t off = symtab->symbols[i].n_un.n_strx;
-			if (off >= symtab->cmd->strsize) {
-				symtab->symbols[i].n_un.n_name = NULL;
-			} else {
-				symtab->symbols[i].n_un.n_name = (char*)(data+symtab->cmd->stroff + off);
+		symtab->is_64 = is_64;
+
+		if (symtab->nsyms > 0) {
+			symtab->symbols = malloc(symtab->nsyms * sizeof(macho_nlist_t));
+			if (!symtab->symbols) {
+				macho_symtab_free(symtab);
+				return NULL;
+			}
+			memset(symtab->symbols, 0, symtab->nsyms * sizeof(macho_nlist_t));
+
+			unsigned char* sym_ptr = data + symtab->cmd->symoff;
+			int i;
+			for (i = 0; i < symtab->nsyms; i++) {
+				uint32_t n_strx;
+				memcpy(&n_strx, sym_ptr, sizeof(uint32_t));
+				sym_ptr += sizeof(uint32_t);
+				symtab->symbols[i].n_type = *sym_ptr++;
+				symtab->symbols[i].n_sect = *sym_ptr++;
+				memcpy(&symtab->symbols[i].n_desc, sym_ptr, sizeof(int16_t));
+				sym_ptr += sizeof(int16_t);
+				if (is_64) {
+					memcpy(&symtab->symbols[i].n_value, sym_ptr, sizeof(uint64_t));
+					sym_ptr += sizeof(uint64_t);
+				} else {
+					uint32_t val32;
+					memcpy(&val32, sym_ptr, sizeof(uint32_t));
+					symtab->symbols[i].n_value = (uint64_t) val32;
+					sym_ptr += sizeof(uint32_t);
+				}
+				if (n_strx < symtab->cmd->strsize) {
+					symtab->symbols[i].n_un.n_name = (char*)(data + symtab->cmd->stroff + n_strx);
+				} else {
+					symtab->symbols[i].n_un.n_name = NULL;
+				}
 			}
 		}
 		//macho_symtab_debug(symtab);
@@ -65,13 +92,14 @@ void macho_symtab_debug(macho_symtab_t* symtab) {
 	debug("\t\tnsyms: 0x%08x\n", symtab->nsyms);
 	int i;
 	for (i = 0; i < symtab->nsyms; i++) {
-		struct nlist sym = symtab->symbols[i];
-		if (sym.n_un.n_name) {
-			debug("\t\t0x%x\tname=%s\n", i, sym.n_un.n_name);
+		macho_nlist_t* sym = &symtab->symbols[i];
+		if (sym->n_un.n_name) {
+			debug("\t\t0x%x\tname=%s\n", i, sym->n_un.n_name);
 		} else {
 			debug("\t\t0x%x\tname=(no name)\n", i);
 		}
-		debug("\t\t\tn_type=0x%02x,n_sect=0x%02x,n_desc=0x%04x,n_value=0x%08x\n", sym.n_type, sym.n_sect, sym.n_desc, sym.n_value);
+		debug("\t\t\tn_type=0x%02x, n_sect=0x%02x, n_desc=0x%04x, n_value=0x%016" PRIx64 "\n",
+			sym->n_type, sym->n_sect, (uint16_t)sym->n_desc, sym->n_value);
 	}
 }
 
@@ -79,6 +107,9 @@ void macho_symtab_free(macho_symtab_t* symtab) {
 	if (symtab) {
 		if (symtab->cmd) {
 			macho_symtab_cmd_free(symtab->cmd);
+		}
+		if (symtab->symbols) {
+			free(symtab->symbols);
 		}
 		free(symtab);
 	}
