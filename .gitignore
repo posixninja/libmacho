@@ -3,6 +3,7 @@
 /autom4te.cache/requests
 /stamp-h1
 Makefile
+!tests/Makefile
 /config.status
 /config.log
 /config.h
