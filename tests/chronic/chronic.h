@@ -39,8 +39,14 @@ static inline int file_read(const char *path, unsigned char **data,
     }
     rewind(fp);
 
-    *data = (unsigned char *)malloc((size_t)len);
+    *data = malloc((size_t)len);
     if (!*data) {
+        fclose(fp);
+        return -1;
+    }
+    if ((unsigned long)len > (unsigned long)(unsigned int)-1) {
+        free(*data);
+        *data = NULL;
         fclose(fp);
         return -1;
     }

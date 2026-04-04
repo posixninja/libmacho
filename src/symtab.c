@@ -49,7 +49,7 @@ macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data, uint8
 		symtab->is_64 = is_64;
 
 		if (symtab->nsyms > 0) {
-			symtab->symbols = (macho_nlist_t*) malloc(symtab->nsyms * sizeof(macho_nlist_t));
+			symtab->symbols = malloc(symtab->nsyms * sizeof(macho_nlist_t));
 			if (!symtab->symbols) {
 				macho_symtab_free(symtab);
 				return NULL;
@@ -98,7 +98,7 @@ void macho_symtab_debug(macho_symtab_t* symtab) {
 		} else {
 			debug("\t\t0x%x\tname=(no name)\n", i);
 		}
-		debug("\t\t\tn_type=0x%02x,n_sect=0x%02x,n_desc=0x%04x,n_value=0x%016" PRIx64 "\n",
+		debug("\t\t\tn_type=0x%02x, n_sect=0x%02x, n_desc=0x%04x, n_value=0x%016" PRIx64 "\n",
 			sym->n_type, sym->n_sect, (uint16_t)sym->n_desc, sym->n_value);
 	}
 }
