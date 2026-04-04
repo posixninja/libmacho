@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #include <macho/macho.h>
 #include <chronic/chronic.h>
@@ -41,14 +42,14 @@ static void print_usage(int argc, char **argv)
 	printf("\n");
 }
 
-static uint32_t get_virtual_address(macho_t* macho, uint32_t offset)
+static uint64_t get_virtual_address(macho_t* macho, uint64_t offset)
 {
 	if (macho->segment_count == 0) {
 		error("no segments?\n");
 		return 0;
 	}
 
-	uint32_t vaddr = 0;
+	uint64_t vaddr = 0;
 	int i;
 
 	for (i = 0; i < macho->segment_count; i++) {
@@ -63,7 +64,7 @@ static uint32_t get_virtual_address(macho_t* macho, uint32_t offset)
 
 int main(int argc, char* argv[])
 {
-	uint32_t offset = 0;
+	uint64_t offset = 0;
 	char* search = NULL;
 	int search_len = 0;
 	int mode = (argc < 2) ? OP_NONE : OP_INFO;
@@ -77,7 +78,7 @@ int main(int argc, char* argv[])
 				print_usage(argc, argv);
 				return 0;
 			}
-			sscanf(argv[i], "%i", &offset);
+			sscanf(argv[i], "%" SCNi64, &offset);
 			mode = OP_VIRT;
 			continue;
 		}
@@ -107,9 +108,9 @@ int main(int argc, char* argv[])
 	switch (mode) {
 	case OP_VIRT:
 		{
-			uint32_t vaddr = get_virtual_address(macho, offset);
+			uint64_t vaddr = get_virtual_address(macho, offset);
 			if (vaddr > 0) {
-				printf("0x%08x\n", vaddr);
+				printf("0x%016" PRIx64 "\n", vaddr);
 			} else {
 				printf("Not found...\n");
 			}
@@ -128,30 +129,30 @@ int main(int argc, char* argv[])
 
 			// found match. go back to the beginning of the string
 			offset = i;
-			uint32_t saddr;
+			uint64_t saddr;
 			found++;
 
 			while (offset > 0 && (macho->data[offset-1] != '\0')) {
 				offset--;
 			}
-			debug("Found match in string '%s', offset 0x%08x\n", macho->data + offset, offset);
+			debug("Found match in string '%s', offset 0x%016" PRIx64 "\n", macho->data + offset, offset);
 			saddr = get_virtual_address(macho, offset);
 			if (saddr == 0) {
-				error("Error: could not get virtual address for offset 0x%08x\n", offset);
+				error("Error: could not get virtual address for offset 0x%016" PRIx64 "\n", offset);
 				continue;
 			}
-			debug("Virtual address: 0x%08x\n", saddr);
+			debug("Virtual address: 0x%016" PRIx64 "\n", saddr);
 			int j;
 			for (j = 0; j < macho->size; j+=4) {
 				if (*(uint32_t*)(macho->data+j) == saddr) {
-					uint32_t vaddr = get_virtual_address(macho, j);
-					debug("found reference at offset 0x%08x, vaddr=0x%08x\n", j, vaddr);
+					uint64_t vaddr = get_virtual_address(macho, j);
+					debug("found reference at offset 0x%016" PRIx64 ", vaddr=0x%016" PRIx64 "\n", (uint64_t)j, vaddr);
 					offset = j;
 					while (offset > 0 && ((*(uint16_t*)(macho->data+offset) & 0xFF0F) != 0xB500)) {
 						offset -= 2;
 					}
-					debug("found push instruction at offset 0x%08x\n", offset);
-					printf("function 0x%08x\n", get_virtual_address(macho, offset));
+					debug("found push instruction at offset 0x%016" PRIx64 "\n", offset);
+					printf("function 0x%016" PRIx64 "\n", get_virtual_address(macho, offset));
 				}
 			}
 		}

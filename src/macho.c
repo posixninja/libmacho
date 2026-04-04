@@ -73,6 +73,7 @@ macho_t* macho_load(unsigned char* data, unsigned int size) {
 		for (i = 0; i < macho->command_count; i++) {
 			switch (macho->commands[i]->info->cmd) {
 			case MACHO_CMD_SEGMENT:
+			case MACHO_CMD_SEGMENT_64:
 				seg_count++;
 				break;
 			case MACHO_CMD_SYMTAB:
