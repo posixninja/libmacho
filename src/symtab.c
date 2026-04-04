@@ -36,7 +36,7 @@ macho_symtab_t* macho_symtab_create() {
 	return symtab;
 }
 
-macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data) {
+macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data, uint8_t is_64) {
 	macho_symtab_t* symtab = macho_symtab_create();
 	if (symtab) {
 		symtab->cmd = macho_symtab_cmd_load(cmd);
@@ -44,6 +44,7 @@ macho_symtab_t* macho_symtab_load(unsigned char* cmd, unsigned char* data) {
 			macho_symtab_free(symtab);
 			return NULL;
 		}
+		symtab->is_64 = is_64;
 		symtab->nsyms = symtab->cmd->nsyms;
 		symtab->symbols = (struct nlist*)(data+symtab->cmd->symoff);
 		int i;

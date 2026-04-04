@@ -33,7 +33,7 @@
 macho_t* macho_create() {
 	macho_t* macho = (macho_t*) malloc(sizeof(macho_t));
 	if (macho) {
-		memset(macho, '\0', sizeof(macho));
+		memset(macho, '\0', sizeof(macho_t));
 	}
 	return macho;
 }
@@ -114,7 +114,6 @@ macho_t* macho_open(const char* path) {
 		err = file_read(path, &data, &size);
 		if (err < 0) {
 			error("Unable to read Mach-O file\n");
-			macho_free(macho);
 			return NULL;
 		}
 
@@ -122,6 +121,7 @@ macho_t* macho_open(const char* path) {
 		macho = macho_load(data, size);
 		if (macho == NULL) {
 			error("Unable to load Mach-O file\n");
+			free(data);
 			return NULL;
 		}
 	}
@@ -255,9 +255,19 @@ macho_header_t* macho_header_load(macho_t* macho) {
 	}
 
 	uint32_t magic = 0;
+	if (offset + sizeof(uint32_t) > macho->size) {
+		error("Mach-O file too small to contain a header\n");
+		macho_header_free(header);
+		return NULL;
+	}
 	memcpy(&magic, &data[offset], sizeof(uint32_t));
 
 	if (magic == MACHO_MAGIC_64 || magic == MACHO_CIGAM_64) {
+		if (offset + sizeof(macho_disk_header64_t) > macho->size) {
+			error("Mach-O file too small to contain a 64-bit header\n");
+			macho_header_free(header);
+			return NULL;
+		}
 		macho_disk_header64_t disk = { 0 };
 		memcpy(&disk, &data[offset], sizeof(macho_disk_header64_t));
 		header->magic = disk.magic;
@@ -271,6 +281,11 @@ macho_header_t* macho_header_load(macho_t* macho) {
 		header->is_64 = 1;
 		macho->offset += sizeof(macho_disk_header64_t);
 	} else {
+		if (offset + sizeof(macho_disk_header32_t) > macho->size) {
+			error("Mach-O file too small to contain a 32-bit header\n");
+			macho_header_free(header);
+			return NULL;
+		}
 		macho_disk_header32_t disk = { 0 };
 		memcpy(&disk, &data[offset], sizeof(macho_disk_header32_t));
 		header->magic = disk.magic;
@@ -323,6 +338,11 @@ int macho_handle_command(macho_t* macho, macho_command_t* command) {
 		// segment of this file to be mapped
 		{
 		uint8_t is_segment_64 = (command->info->cmd == MACHO_CMD_SEGMENT_64);
+		size_t min_seg_size = is_segment_64 ? 64 : 56;
+		if (command->offset + min_seg_size > macho->size) {
+			error("Segment command at offset 0x%x extends beyond end of file\n", command->offset);
+			break;
+		}
 		macho_segment_t* seg = macho_segment_load(macho->data,
 				command->offset, is_segment_64);
 			if (seg) {
@@ -337,6 +357,10 @@ int macho_handle_command(macho_t* macho, macho_command_t* command) {
 			// link-edit stab symbol table info
 		{
 		uint8_t is_64 = (macho->header && macho->header->is_64) ? 1 : 0;
+		if (command->offset + sizeof(macho_symtab_cmd_t) > macho->size) {
+			error("Symtab command at offset 0x%x extends beyond end of file\n", command->offset);
+			break;
+		}
 		macho_symtab_t* symtab = macho_symtab_load(macho->data+command->offset, macho->data, is_64);
 			if (symtab) {
 				macho->symtabs[macho->symtab_count++] = symtab;
@@ -358,7 +382,10 @@ int macho_handle_command(macho_t* macho, macho_command_t* command) {
  * Mach-O Commands Functions
  */
 macho_command_t** macho_commands_create(uint32_t count) {
-	uint32_t size = (count + 1) * sizeof(macho_command_t*);
+	if (count > (SIZE_MAX / sizeof(macho_command_t*)) - 1) {
+		return NULL;
+	}
+	size_t size = ((size_t)count + 1) * sizeof(macho_command_t*);
 	macho_command_t** commands = (macho_command_t**) malloc(size);
 	if (commands) {
 		memset(commands, '\0', size);
@@ -382,9 +409,20 @@ macho_command_t** macho_commands_load(macho_t* macho) {
 		//debug("Loading Mach-O commands array\n");
 		for (i = 0; i < count; i++) {
 			//debug("Loading Mach-O command %d from offset 0x%x\n", i, macho->offset);
+			if (macho->offset + sizeof(macho_command_info_t) > macho->size) {
+				error("Command %d extends beyond end of file\n", i);
+				macho_commands_free(commands);
+				return NULL;
+			}
 			commands[i] = macho_command_load(macho->data, macho->offset);
 			if (commands[i] == NULL) {
 				error("Unable to parse Mach-O load command\n");
+				macho_commands_free(commands);
+				return NULL;
+			}
+			if (commands[i]->size < sizeof(macho_command_info_t) ||
+			    macho->offset + commands[i]->size > macho->size) {
+				error("Invalid command size for command %d\n", i);
 				macho_commands_free(commands);
 				return NULL;
 			}
@@ -423,7 +461,10 @@ void macho_commands_free(macho_command_t** commands) {
 macho_segment_t** macho_segments_create(uint32_t count) {
 	if (count == 0)
 		return NULL;
-	int size = (count + 1) * sizeof(macho_segment_t*);
+	if (count > (SIZE_MAX / sizeof(macho_segment_t*)) - 1) {
+		return NULL;
+	}
+	size_t size = ((size_t)count + 1) * sizeof(macho_segment_t*);
 	macho_segment_t** segments = (macho_segment_t**) malloc(size);
 	if (segments) {
 		memset(segments, '\0', size);
@@ -463,7 +504,10 @@ void macho_segments_free(macho_segment_t** segments) {
 macho_symtab_t** macho_symtabs_create(uint32_t count) {
 	if (count == 0)
 		return NULL;
-	int size = (count + 1) * sizeof(macho_symtab_t*);
+	if (count > (SIZE_MAX / sizeof(macho_symtab_t*)) - 1) {
+		return NULL;
+	}
+	size_t size = ((size_t)count + 1) * sizeof(macho_symtab_t*);
 	macho_symtab_t** symtabs = (macho_symtab_t**) malloc(size);
 	if (symtabs) {
 		memset(symtabs, '\0', size);
